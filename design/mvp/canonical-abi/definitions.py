@@ -1,37 +1,99 @@
-# Canonical ABI Explainer
+# Boilerplate
 
-* Link to explainer for context
-* What this explainer covers
+import math
+import struct
+from dataclasses import dataclass
 
-Contents:
-* [Supporting definitions](#supporting-definitions)
-  * [Despecialization](#Despecialization)
-  * [Alignment](#alignment)
-  * [Size](#size)
-  * [Loading](#loading)
-  * [Storing](#storing)
-  * [Flattening](#flattening)
-  * [Lifting](#lifting)
-  * [Lowering](#lowering)
-  * [Calling into a component](#calling-into-a-component)
-  * [Calling out of a component](#calling-out-of-a-component)
-* [Canonical ABI built-ins](#canonical-abi-built-ins)
-  * [`canon.lift`](#canonlift)
-  * [`canon.lower`](#canonlower)
-* [TODO](#TODO)
+class Trap(BaseException):
+  pass
 
+def trap():
+  raise Trap()
 
-## Supporting definitions
+def trap_if(cond):
+  if cond:
+    raise Trap()
 
-* Written in Python (3.10, to get structural pattern matching)
-* Spec would macro-expand to functions containing existing wasm + new administrative instructions
-* The [`canonical-abi`](./canonical-abi) directory contains runnable code and tests
-* The definitions listed below assume the boilerplate definitions at the top of [`canonical-abi/definitions.py`](./canonical-abi/definitions.py)
-* Python `assert`s should never; they are spec-internal assertions (wasm-level errors call `trap()`/`trap_if()`)
+def assert_unreachable(v):
+  print("Unreachable ({})".format(v))
+  assert(False)
 
-### Despecialization
+def to_python_encoding(encoding):
+  match encoding:
+    case 'utf8'   : return 'utf-8'
+    case 'utf16'  : return 'utf-16-le'
+    case 'latin1' : return 'latin-1'
+    case _        : assert_unreachable(encoding)
 
-```python
+class Unit: pass
+class Bool: pass
+class S8: pass
+class U8: pass
+class S16: pass
+class U16: pass
+class S32: pass
+class U32: pass
+class S64: pass
+class U64: pass
+class Float32: pass
+class Float64: pass
+class Char: pass
+class String: pass
+
+@dataclass
+class List:
+  t: any
+
+@dataclass
+class Field:
+  label: str
+  t: any
+
+@dataclass
+class Record:
+  fields: [Field]
+
+@dataclass
+class Tuple:
+  ts: [any]
+
+@dataclass
+class Flags:
+  labels: [str]
+
+@dataclass
+class Case:
+  label: str
+  t: any
+
+@dataclass
+class Variant:
+  cases: [Case]
+
+@dataclass
+class Enum:
+  labels: [str]
+
+@dataclass
+class Union:
+  ts: [any]
+
+@dataclass
+class Option:
+  t: any
+
+@dataclass
+class Expected:
+  ok: any
+  error: any
+
+@dataclass
+class Func:
+  params: [any]
+  result: any
+
+# Despecialization
+
 def despecialize(t):
   match t:
     case Tuple(ts)           : return Record([ Field(str(i), t) for i,t in enumerate(ts) ])
@@ -40,12 +102,9 @@ def despecialize(t):
     case Option(t)           : return Variant([ Case("none", Unit()), Case("some", t) ])
     case Expected(ok, error) : return Variant([ Case("ok", ok), Case("error", error) ])
     case _                   : return t
-```
-* why `flags` aren't despecialized
 
-### Alignment
+# Alignment
 
-```python
 def alignment(t):
   match despecialize(t):
     case Unit()             : return 1
@@ -87,11 +146,9 @@ def alignment_flags(labels):
   if n <= 8: return 1
   if n <= 16: return 2
   return 4
-```
 
-### Size
+# Size
 
-```python
 def elem_size(t):
   return align_to(byte_size(t), alignment(t))
 
@@ -135,13 +192,9 @@ def byte_size_flags(labels):
   if n <= 8: return 1
   if n <= 16: return 2
   return 4 * math.ceil(n / 32)
-```
 
-* two relevant measures: for array elements and for record/variant field storage
+# Loading
 
-### Loading
-
-```python
 class Opts:
   memory: bytearray
   string_encoding: str
@@ -249,11 +302,9 @@ def load_flags_from_bigint(i, labels):
     i >>= 1
   trap_if(i)
   return record
-```
 
-### Storing
+# Storing
 
-```python
 def store(opts, v, t, ptr):
   assert(ptr == align_to(ptr, alignment(t)))
   match despecialize(t):
@@ -434,13 +485,9 @@ def concat_flags_into_bigint(v, labels):
     i |= (int(bool(v[l])) << shift)
     shift += 1
   return i
-```
 
-* Why string is nuts
+# Flattening
 
-### Flattening
-
-```python
 def flatten(t):
   match despecialize(t):
     case Unit()               : return []
@@ -480,13 +527,9 @@ def flatten_flags(labels):
 
 def num_flattened_i32s(labels):
   return math.ceil(len(labels) / 32)
-```
 
-* how this is just a best-effort optimization to avoid heap in common cases
+# Lifting
 
-### Lifting
-
-```python
 @dataclass
 class Value:
   t: any
@@ -594,13 +637,9 @@ def lift_flags(vi, labels):
     i |= (vi.next('i32') << shift)
     shift += 32
   return load_flags_from_bigint(i, labels)
-```
 
-* assume: `i32` value is Python `int` in range [0,2<sup>32</sup>)
+# Lowering
 
-### Lowering
-
-```python
 def lower(opts, v, t):
   match despecialize(t):
     case Unit()         : return []
@@ -667,13 +706,9 @@ def lower_flags(v, labels):
     i >>= 32
   assert(i == 0)
   return flat
-```
 
-* why `lower_signed` is doing that
+# Calling into a component
 
-### Calling into a component
-
-```python
 MAX_PARAMS = 16
 MAX_RESULTS = 1 # only until we can use multi-value
 
@@ -715,11 +750,9 @@ def call_in(opts, callee, functype, args):
     opts.post_return()
 
   return (result, post_return)
-```
 
-### Calling out of a component
+# Calling out of a component
 
-```python
 def call_out(opts, caller_instance, callee, functype, flat_args):
   trap_if(not caller_instance.may_leave)
   caller_instance.may_enter = False
@@ -747,60 +780,4 @@ def call_out(opts, caller_instance, callee, functype, flat_args):
 
   caller_instance.may_enter = True
   return flat_results
-```
 
-* non-reentrance = one-shot value semantics
-* why `may_enter` is cleared in `post-return`
-* why `MAX_PARAMS`/`MAX_RESULTS` (and multi-value)
-
-
-## Canonical ABI built-ins
-
-Using the above definitions, we can define...
-
-
-### `canon.lift`
-
-For a [function definition](Explainer.md#function-definitions):
-```
-(func $f (canon.lift $ft:<functype> $opts:<canonopt>* $callee:<funcidx>))
-```
-validation specifies:
- * `$callee` must have type `flatten($ft)`
- * `$f` is given type `$ft`
-
-At instantiation time:
-* Define `$f` to be the function: `lambda args: call_in($opts, $callee, $ft, args)`
-
-Thus, `$f` captures `$opts`, `$callee` and `$ft` in a closure which can
-subsequently be exported by the containing component instance.
-
-
-### `canon.lower`
-
-For a [function definition](Explainer.md#function-definitions):
-```
-(func $f (canon.lower $opts:<canonopt>* $callee:<funcidx>))
-```
-where `$callee` has type `$ft`, validation specifies:
-* `$f` is given type `flatten($ft)`
-
-At instantiation time:
-* Let `$inst` be the current instance being instantiated.
-* Define `$f` to be the function: `lambda args: call_out($opts, $inst, $callee, $ft, args)`
-
-Note that:
-* b/c core func types can't be exported, `$f` cannot be exported: it must be
-  called, if at all, by the same component
-* b/c of the `may_enter`/`may_leave` invariants maintained by `call_in`/`call_out`, an attempt
-  to `canon.lower` a same-component `canon.lift` will be guaranteed to trap and so can be statically
-  compiled to `unreachable` when caller and callee are known.
-
-
-## TODO
-
-* Add conservative max allocation sizes?
-* Add `defaults-to`
-
-
-[Addresses]: https://webassembly.github.io/spec/core/exec/runtime.html#addresses

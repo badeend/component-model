@@ -495,11 +495,13 @@ the given `instanceidx` is a module instance exporting the following fields:
 ```
 (export "memory" (memory 1))
 (export "realloc" (func (param i32 i32 i32 i32) (result i32)))
-(export "free" (func (param i32 i32 i32)))
+(export "post-return" (func))
 ```
 The 4 parameters of `realloc` are: original allocation (or `0` for none), original
-size (or `0` if none), alignment and new desired size. The 3 parameters of `free`
-are the pointer, size and alignment.
+size (or `0` if none), alignment and new desired size.
+
+TODO: describe `post-return`, link to `CanonicalABI.md`.
+TODO: update examples below for `post-return`.
 
 With this, we can finally write a non-trivial component that takes a string,
 does some logging, then returns a string.
@@ -654,6 +656,8 @@ note that all definitions are acyclic as is the resulting instance graph.
 
 
 ## Component Invariants
+
+TODO: add links to CanonicalABI.md
 
 As a consequence of the shared-nothing design described above, all calls into
 or out of a component instance necessarily transit through a component function
